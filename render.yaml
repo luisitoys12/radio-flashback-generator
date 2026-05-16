@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: radio-flashback-generator
+    runtime: docker
+    repo: https://github.com/luisitoys12/radio-flashback-generator
+    branch: main
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
