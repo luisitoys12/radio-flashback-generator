@@ -44,6 +44,7 @@
     input[type=range] { flex: 1; accent-color: #e94560; }
     .badge { background: #e94560; color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #5dade2; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+    .voice-badge { font-size: 0.75rem; background: #1a3a5c; color: #5dade2; padding: 2px 8px; border-radius: 20px; margin-left: 6px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
   </style>
@@ -54,7 +55,7 @@
   <span>🎙️</span>
   <div>
     <h1>Radio Flashback Generator</h1>
-    <small style="color:#aaa">RSS + Voz Microsoft + Música Noticiosa</small>
+    <small style="color:#aaa">RSS + Voz Google TTS + Música Noticiosa &nbsp;<span class="voice-badge">Powered by gTTS</span></small>
   </div>
 </header>
 
@@ -65,7 +66,7 @@
     <h2>📰 Feeds RSS</h2>
     <div id="rss-inputs">
       <div class="rss-row">
-        <input type="text" placeholder="https://feeds.ejemplo.com/rss" class="rss-url">
+        <input type="text" placeholder="https://www.am.com.mx/category/irapuato/feed" class="rss-url">
         <button class="btn btn-secondary btn-sm" onclick="removeRss(this)">✕</button>
       </div>
     </div>
@@ -91,7 +92,7 @@
     </div>
     <div class="grid-2">
       <div class="form-group">
-        <label>🎙️ Voz</label>
+        <label>🎙️ Voz (Google TTS)</label>
         <select id="voice-select">
           {% for key, name in voices.items() %}
           <option value="{{ key }}">{{ name }}</option>
@@ -137,12 +138,10 @@
 let currentFile = null;
 let currentFilename = null;
 
-// Contador de caracteres
 document.getElementById('texto-flashback').addEventListener('input', function() {
   document.getElementById('char-count').textContent = this.value.length + ' chars';
 });
 
-// Volumen label
 document.getElementById('music-volume').addEventListener('input', function() {
   document.getElementById('volume-label').textContent = this.value + ' dB';
 });
@@ -188,7 +187,7 @@ function appendNoticia(n) {
 async function generateFlashback() {
   const texto = document.getElementById('texto-flashback').value.trim();
   if (!texto) return showStatus('gen-status', 'Escribe o carga noticias primero', 'error');
-  showStatus('gen-status', '<span class="spinner"></span>Generando audio con voz Microsoft...', 'loading');
+  showStatus('gen-status', '<span class="spinner"></span>Generando audio con Google TTS... (puede tardar unos segundos)', 'loading');
   const voice = document.getElementById('voice-select').value;
   const music_file = document.getElementById('music-select').value;
   const music_volume = document.getElementById('music-volume').value;
@@ -235,7 +234,6 @@ function showStatus(id, msg, type) {
   el.className = 'status ' + type;
 }
 
-// Cargar lista de música
 async function loadMusicList() {
   const res = await fetch('/music-list');
   const data = await res.json();
