@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎙️ Radio Flashback Generator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f0f1a; color: #eee; min-height: 100vh; }
+    header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px 30px; border-bottom: 2px solid #e94560; display: flex; align-items: center; gap: 15px; }
+    header h1 { font-size: 1.5rem; color: #fff; }
+    header span { font-size: 2rem; }
+    .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .card { background: #1a1a2e; border-radius: 12px; padding: 25px; margin-bottom: 20px; border: 1px solid #2a2a4a; }
+    .card h2 { color: #e94560; margin-bottom: 15px; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; }
+    .rss-row { display: flex; gap: 10px; margin-bottom: 10px; }
+    input[type=text], textarea, select { width: 100%; background: #0f0f1a; border: 1px solid #2a2a4a; color: #eee; padding: 10px 14px; border-radius: 8px; font-size: 0.95rem; outline: none; transition: border 0.2s; }
+    input[type=text]:focus, textarea:focus, select:focus { border-color: #e94560; }
+    textarea { min-height: 160px; resize: vertical; line-height: 1.6; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 600; transition: all 0.2s; }
+    .btn-primary { background: #e94560; color: #fff; }
+    .btn-primary:hover { background: #c73652; }
+    .btn-secondary { background: #2a2a4a; color: #eee; }
+    .btn-secondary:hover { background: #3a3a6a; }
+    .btn-green { background: #27ae60; color: #fff; }
+    .btn-green:hover { background: #219a52; }
+    .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: #aaa; }
+    .noticias-list { max-height: 280px; overflow-y: auto; }
+    .noticia-item { background: #0f0f1a; border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+    .noticia-item:hover { border-color: #e94560; }
+    .noticia-item h4 { font-size: 0.9rem; color: #e94560; margin-bottom: 4px; }
+    .noticia-item p { font-size: 0.82rem; color: #aaa; line-height: 1.4; }
+    .noticia-item .fuente { font-size: 0.75rem; color: #666; margin-bottom: 4px; }
+    .audio-player { background: #0f0f1a; border-radius: 10px; padding: 20px; text-align: center; }
+    .audio-player audio { width: 100%; margin-bottom: 15px; }
+    .status { padding: 10px 15px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; display: none; }
+    .status.loading { background: #1a3a5c; color: #5dade2; display: block; }
+    .status.success { background: #1a3a2a; color: #2ecc71; display: block; }
+    .status.error { background: #3a1a1a; color: #e74c3c; display: block; }
+    .range-group { display: flex; align-items: center; gap: 10px; }
+    input[type=range] { flex: 1; accent-color: #e94560; }
+    .badge { background: #e94560; color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #5dade2; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <span>🎙️</span>
+  <div>
+    <h1>Radio Flashback Generator</h1>
+    <small style="color:#aaa">RSS + Voz Microsoft + Música Noticiosa</small>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- RSS FEEDS -->
+  <div class="card">
+    <h2>📰 Feeds RSS</h2>
+    <div id="rss-inputs">
+      <div class="rss-row">
+        <input type="text" placeholder="https://feeds.ejemplo.com/rss" class="rss-url">
+        <button class="btn btn-secondary btn-sm" onclick="removeRss(this)">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="addRss()">+ Agregar RSS</button>
+      <select id="max-items" style="width:auto;padding:6px 12px">
+        <option value="2">2 noticias por feed</option>
+        <option value="3" selected>3 noticias por feed</option>
+        <option value="5">5 noticias por feed</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="fetchRss()">🔄 Cargar noticias</button>
+    </div>
+    <div id="rss-status" class="status"></div>
+    <div id="noticias-list" class="noticias-list" style="margin-top:15px"></div>
+  </div>
+
+  <!-- EDITOR -->
+  <div class="card">
+    <h2>✏️ Editor del Flashback</h2>
+    <div class="form-group">
+      <label>Texto del flashback <span class="badge" id="char-count">0 chars</span></label>
+      <textarea id="texto-flashback" placeholder="Escribe o pega aquí el texto del flashback informativo. Puedes hacer clic en una noticia de arriba para agregarla automáticamente..."></textarea>
+    </div>
+    <div class="grid-2">
+      <div class="form-group">
+        <label>🎙️ Voz</label>
+        <select id="voice-select">
+          {% for key, name in voices.items() %}
+          <option value="{{ key }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>🎵 Música noticiosa</label>
+        <select id="music-select">
+          <option value="">Sin música</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>🔊 Volumen música de fondo</label>
+      <div class="range-group">
+        <input type="range" id="music-volume" min="-30" max="0" value="-18" step="1">
+        <span id="volume-label">-18 dB</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="clearText()">🗑️ Limpiar</button>
+      <button class="btn btn-secondary btn-sm" onclick="addIntro()">+ Intro</button>
+      <button class="btn btn-secondary btn-sm" onclick="addOutro()">+ Cierre</button>
+      <button class="btn btn-primary" onclick="generateFlashback()">🎙️ Generar Flashback</button>
+    </div>
+    <div id="gen-status" class="status"></div>
+  </div>
+
+  <!-- REPRODUCTOR -->
+  <div class="card" id="player-card" style="display:none">
+    <h2>🎧 Flashback Generado</h2>
+    <div class="audio-player">
+      <audio id="audio-player" controls></audio>
+      <br>
+      <button class="btn btn-green" id="btn-download" onclick="downloadAudio()">⬇️ Descargar MP3</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let currentFile = null;
+let currentFilename = null;
+
+// Contador de caracteres
+document.getElementById('texto-flashback').addEventListener('input', function() {
+  document.getElementById('char-count').textContent = this.value.length + ' chars';
+});
+
+// Volumen label
+document.getElementById('music-volume').addEventListener('input', function() {
+  document.getElementById('volume-label').textContent = this.value + ' dB';
+});
+
+function addRss() {
+  const div = document.createElement('div');
+  div.className = 'rss-row';
+  div.innerHTML = '<input type="text" placeholder="https://feeds.ejemplo.com/rss" class="rss-url"><button class="btn btn-secondary btn-sm" onclick="removeRss(this)">✕</button>';
+  document.getElementById('rss-inputs').appendChild(div);
+}
+
+function removeRss(btn) {
+  const rows = document.querySelectorAll('.rss-row');
+  if (rows.length > 1) btn.parentElement.remove();
+}
+
+async function fetchRss() {
+  const urls = [...document.querySelectorAll('.rss-url')].map(i => i.value).filter(v => v.trim());
+  if (!urls.length) return showStatus('rss-status', 'Agrega al menos un RSS', 'error');
+  showStatus('rss-status', '<span class="spinner"></span>Cargando noticias...', 'loading');
+  const res = await fetch('/fetch-rss', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ urls, max_items: parseInt(document.getElementById('max-items').value) }) });
+  const data = await res.json();
+  showStatus('rss-status', `✅ ${data.noticias.length} noticias cargadas. Haz clic para agregar al texto.`, 'success');
+  const list = document.getElementById('noticias-list');
+  list.innerHTML = '';
+  data.noticias.forEach(n => {
+    if (n.error) return;
+    const div = document.createElement('div');
+    div.className = 'noticia-item';
+    div.innerHTML = `<div class="fuente">📡 ${n.fuente}</div><h4>${n.titulo}</h4><p>${n.resumen}</p>`;
+    div.onclick = () => appendNoticia(n);
+    list.appendChild(div);
+  });
+}
+
+function appendNoticia(n) {
+  const ta = document.getElementById('texto-flashback');
+  const sep = ta.value ? '\n\n' : '';
+  ta.value += sep + n.titulo + '. ' + n.resumen;
+  ta.dispatchEvent(new Event('input'));
+}
+
+async function generateFlashback() {
+  const texto = document.getElementById('texto-flashback').value.trim();
+  if (!texto) return showStatus('gen-status', 'Escribe o carga noticias primero', 'error');
+  showStatus('gen-status', '<span class="spinner"></span>Generando audio con voz Microsoft...', 'loading');
+  const voice = document.getElementById('voice-select').value;
+  const music_file = document.getElementById('music-select').value;
+  const music_volume = document.getElementById('music-volume').value;
+  const res = await fetch('/generate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ texto, voice, music_file, music_volume }) });
+  const data = await res.json();
+  if (data.error) return showStatus('gen-status', '❌ ' + data.error, 'error');
+  currentFile = data.file;
+  currentFilename = data.filename;
+  showStatus('gen-status', '✅ Flashback generado correctamente', 'success');
+  const player = document.getElementById('audio-player');
+  player.src = '/download/' + currentFile + '?filename=' + currentFilename;
+  document.getElementById('player-card').style.display = 'block';
+  player.play();
+}
+
+function downloadAudio() {
+  if (!currentFile) return;
+  const a = document.createElement('a');
+  a.href = '/download/' + currentFile + '?filename=' + currentFilename;
+  a.download = currentFilename;
+  a.click();
+}
+
+function clearText() {
+  document.getElementById('texto-flashback').value = '';
+  document.getElementById('char-count').textContent = '0 chars';
+}
+
+function addIntro() {
+  const ta = document.getElementById('texto-flashback');
+  ta.value = 'Aquí, Estación Kusmedios. En nuestro flashback informativo de las ' + new Date().getHours() + ' horas, las noticias más importantes.\n\n' + ta.value;
+  ta.dispatchEvent(new Event('input'));
+}
+
+function addOutro() {
+  const ta = document.getElementById('texto-flashback');
+  ta.value += '\n\nEso es todo en el flashback informativo de Estación Kusmedios. Seguimos con más música.';
+  ta.dispatchEvent(new Event('input'));
+}
+
+function showStatus(id, msg, type) {
+  const el = document.getElementById(id);
+  el.innerHTML = msg;
+  el.className = 'status ' + type;
+}
+
+// Cargar lista de música
+async function loadMusicList() {
+  const res = await fetch('/music-list');
+  const data = await res.json();
+  const sel = document.getElementById('music-select');
+  data.files.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = '🎵 ' + f;
+    sel.appendChild(opt);
+  });
+}
+
+loadMusicList();
+</script>
+</body>
+</html>
