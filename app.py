@@ -1,10 +1,9 @@
 from flask import Flask, render_template, request, jsonify, send_file
 import feedparser
-import edge_tts
-import asyncio
 import os
 import uuid
-import json
+import re
+import subprocess
 from pydub import AudioSegment
 from datetime import datetime
 
@@ -35,12 +34,10 @@ def fetch_rss():
     for url in urls:
         try:
             feed = feedparser.parse(url)
-            feed_title = feed.feed.get('title', 'Sin título')
+            feed_title = feed.feed.get('title', 'Sin titulo')
             for entry in feed.entries[:max_items]:
                 title = entry.get('title', '')
                 summary = entry.get('summary', entry.get('description', ''))
-                # Limpiar HTML básico
-                import re
                 summary = re.sub('<[^<]+?>', '', summary)
                 summary = summary[:300].strip()
                 noticias.append({
@@ -61,42 +58,51 @@ def generate():
     music_volume = int(data.get('music_volume', -18))
 
     if not texto:
-        return jsonify({'error': 'Texto vacío'}), 400
+        return jsonify({'error': 'Texto vacio'}), 400
 
     uid = str(uuid.uuid4())[:8]
     voice_path = os.path.join(OUTPUT_DIR, f"voz_{uid}.mp3")
     final_path = os.path.join(OUTPUT_DIR, f"flashback_{uid}.mp3")
 
-    async def tts():
-        communicate = edge_tts.Communicate(texto, voice)
-        await communicate.save(voice_path)
+    # Usar edge-tts via subprocess para evitar conflicto asyncio/Flask
+    try:
+        result = subprocess.run(
+            ["edge-tts", "--voice", voice, "--text", texto, "--write-media", voice_path],
+            timeout=60,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return jsonify({'error': f'TTS error: {result.stderr}'}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Timeout generando audio, texto muy largo'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    asyncio.run(tts())
+    if not os.path.exists(voice_path):
+        return jsonify({'error': 'No se genero el archivo de voz'}), 500
 
-    # Mezclar con música si hay
+    # Mezclar con musica si hay
     music_dir = "static/music"
     music_files = [f for f in os.listdir(music_dir) if f.endswith('.mp3')]
 
+    selected_music = None
     if music_file and music_file in music_files:
         selected_music = os.path.join(music_dir, music_file)
-    elif music_files:
-        selected_music = os.path.join(music_dir, music_files[0])
-    else:
+    elif music_files and not music_file:
         selected_music = None
+    elif music_files and music_file == music_files[0]:
+        selected_music = os.path.join(music_dir, music_files[0])
 
-    if selected_music:
+    if selected_music and os.path.exists(selected_music):
         try:
             voz = AudioSegment.from_mp3(voice_path)
             musica = AudioSegment.from_mp3(selected_music)
-            # Ajustar volumen de música
             musica = musica + music_volume
-            # Loop música si es más corta que la voz
             if len(musica) < len(voz):
                 loops = (len(voz) // len(musica)) + 2
                 musica = musica * loops
-            musica = musica[:len(voz) + 2000]
-            # Fade out al final
-            musica = musica.fade_out(2000)
+            musica = musica[:len(voz) + 2000].fade_out(2000)
             mezcla = musica.overlay(voz)
             mezcla.export(final_path, format="mp3", bitrate="192k")
             os.remove(voice_path)
@@ -110,7 +116,9 @@ def generate():
 
 @app.route('/download/<file_id>')
 def download(file_id):
-    path = os.path.join(OUTPUT_DIR, file_id)
+    # Seguridad: solo permitir archivos en outputs/
+    safe_id = os.path.basename(file_id)
+    path = os.path.join(OUTPUT_DIR, safe_id)
     filename = request.args.get('filename', 'flashback.mp3')
     if os.path.exists(path):
         return send_file(path, as_attachment=True, download_name=filename)
@@ -122,5 +130,9 @@ def music_list():
     files = [f for f in os.listdir(music_dir) if f.endswith('.mp3')]
     return jsonify({'files': files})
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'})
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
