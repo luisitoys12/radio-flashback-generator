@@ -47,13 +47,19 @@
     .voice-badge { font-size: 0.75rem; background: #1a3a5c; color: #5dade2; padding: 2px 8px; border-radius: 20px; margin-left: 6px; }
     .temp-badge { font-size: 0.72rem; background: #3a2a0a; color: #f39c12; padding: 2px 8px; border-radius: 20px; }
     .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #5dade2; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
-    .music-url-row { display: flex; gap: 8px; margin-top: 10px; }
+    .music-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .tab-btn { padding: 5px 12px; border: 1px solid #2a2a4a; background: #0f0f1a; color: #aaa; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+    .tab-btn.active { background: #e94560; color: #fff; border-color: #e94560; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .upload-area { border: 2px dashed #2a2a4a; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: border 0.2s; }
+    .upload-area:hover { border-color: #e94560; }
+    .upload-area input[type=file] { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } .music-url-row { flex-direction: column; } }
+    @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-
 <header>
   <span>🎙️</span>
   <div>
@@ -61,10 +67,8 @@
     <small style="color:#aaa">RSS + Voz Google TTS + Música Noticiosa &nbsp;<span class="voice-badge">Powered by gTTS</span></small>
   </div>
 </header>
-
 <div class="container">
 
-  <!-- RSS FEEDS -->
   <div class="card">
     <h2>📰 Feeds RSS</h2>
     <div id="rss-inputs">
@@ -86,7 +90,6 @@
     <div id="noticias-list" class="noticias-list" style="margin-top:15px"></div>
   </div>
 
-  <!-- EDITOR -->
   <div class="card">
     <h2>✏️ Editor del Flashback</h2>
     <div class="form-group">
@@ -104,14 +107,31 @@
       </div>
       <div class="form-group">
         <label>🎵 Música noticiosa</label>
-        <select id="music-select">
+        <select id="music-select" style="margin-bottom:10px">
           <option value="">Sin música</option>
         </select>
-        <div class="music-url-row">
-          <input type="text" id="music-url-input" placeholder="O pega URL de un MP3 noticiosa..." style="font-size:0.82rem;padding:7px 10px">
-          <button class="btn btn-yellow btn-sm" onclick="loadMusicFromUrl()">⬇️ Cargar</button>
+        <!-- TABS -->
+        <div class="music-tabs">
+          <button class="tab-btn active" onclick="switchTab('tab-file', this)">📱 Subir archivo</button>
+          <button class="tab-btn" onclick="switchTab('tab-url', this)">🔗 Por URL</button>
         </div>
-        <div id="music-url-status" class="status" style="margin-top:6px"></div>
+        <!-- TAB: subir archivo -->
+        <div id="tab-file" class="tab-content active">
+          <div class="upload-area" onclick="document.getElementById('music-file-input').click()">
+            <input type="file" id="music-file-input" accept=".mp3" onchange="uploadMusicFile(this)">
+            <span style="font-size:1.5rem">📂</span>
+            <p style="margin-top:6px;font-size:0.85rem;color:#aaa">Toca aquí para seleccionar un MP3 de tu dispositivo</p>
+            <p style="font-size:0.75rem;color:#555;margin-top:4px">Se usará y borrará al generar</p>
+          </div>
+        </div>
+        <!-- TAB: URL -->
+        <div id="tab-url" class="tab-content">
+          <div style="display:flex;gap:8px">
+            <input type="text" id="music-url-input" placeholder="URL directa a un .mp3..." style="font-size:0.82rem;padding:7px 10px">
+            <button class="btn btn-yellow btn-sm" onclick="loadMusicFromUrl()">⬇️</button>
+          </div>
+        </div>
+        <div id="music-upload-status" class="status" style="margin-top:8px"></div>
       </div>
     </div>
     <div class="form-group">
@@ -130,22 +150,17 @@
     <div id="gen-status" class="status"></div>
   </div>
 
-  <!-- REPRODUCTOR -->
   <div class="card" id="player-card" style="display:none">
     <h2>🎧 Flashback Generado</h2>
     <div class="audio-player">
-      <audio id="audio-player" controls></audio>
-      <br>
+      <audio id="audio-player" controls></audio><br>
       <button class="btn btn-green" onclick="downloadAudio()">⬇️ Descargar MP3</button>
     </div>
   </div>
 
 </div>
-
 <script>
-let currentFile = null;
-let currentFilename = null;
-let tempMusicFile = null; // musica temporal cargada por URL
+let currentFile = null, currentFilename = null;
 
 document.getElementById('texto-flashback').addEventListener('input', function() {
   document.getElementById('char-count').textContent = this.value.length + ' chars';
@@ -154,54 +169,67 @@ document.getElementById('music-volume').addEventListener('input', function() {
   document.getElementById('volume-label').textContent = this.value + ' dB';
 });
 
+function switchTab(tabId, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  btn.classList.add('active');
+}
+
 function addRss() {
-  const div = document.createElement('div');
-  div.className = 'rss-row';
+  const div = document.createElement('div'); div.className = 'rss-row';
   div.innerHTML = '<input type="text" placeholder="https://feeds.ejemplo.com/rss" class="rss-url"><button class="btn btn-secondary btn-sm" onclick="removeRss(this)">✕</button>';
   document.getElementById('rss-inputs').appendChild(div);
 }
 function removeRss(btn) {
   if (document.querySelectorAll('.rss-row').length > 1) btn.parentElement.remove();
 }
-
 async function fetchRss() {
   const urls = [...document.querySelectorAll('.rss-url')].map(i => i.value).filter(v => v.trim());
   if (!urls.length) return showStatus('rss-status', 'Agrega al menos un RSS', 'error');
   showStatus('rss-status', '<span class="spinner"></span>Cargando noticias...', 'loading');
   const res = await fetch('/fetch-rss', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({urls, max_items: parseInt(document.getElementById('max-items').value)})});
   const data = await res.json();
-  showStatus('rss-status', `✅ ${data.noticias.length} noticias cargadas. Clic para agregar al texto.`, 'success');
-  const list = document.getElementById('noticias-list');
-  list.innerHTML = '';
+  showStatus('rss-status', `✅ ${data.noticias.length} noticias cargadas. Clic para agregar.`, 'success');
+  const list = document.getElementById('noticias-list'); list.innerHTML = '';
   data.noticias.forEach(n => {
     if (n.error) return;
-    const div = document.createElement('div');
-    div.className = 'noticia-item';
+    const div = document.createElement('div'); div.className = 'noticia-item';
     div.innerHTML = `<div class="fuente">📡 ${n.fuente}</div><h4>${n.titulo}</h4><p>${n.resumen}</p>`;
     div.onclick = () => { const ta = document.getElementById('texto-flashback'); ta.value += (ta.value ? '\n\n' : '') + n.titulo + '. ' + n.resumen; ta.dispatchEvent(new Event('input')); };
     list.appendChild(div);
   });
 }
 
+async function uploadMusicFile(input) {
+  const file = input.files[0]; if (!file) return;
+  showStatus('music-upload-status', '<span class="spinner"></span>Subiendo ' + file.name + '...', 'loading');
+  const fd = new FormData(); fd.append('file', file);
+  const res = await fetch('/upload-music-file', {method:'POST', body: fd});
+  const data = await res.json();
+  if (data.error) return showStatus('music-upload-status', '❌ ' + data.error, 'error');
+  addTempOption(data.file, file.name);
+  showStatus('music-upload-status', '✅ ' + file.name + ' cargado. Se borrará al generar. <span class="temp-badge">⏱️ temporal</span>', 'success');
+}
+
 async function loadMusicFromUrl() {
   const url = document.getElementById('music-url-input').value.trim();
-  if (!url) return showStatus('music-url-status', 'Ingresa una URL de MP3', 'error');
-  showStatus('music-url-status', '<span class="spinner"></span>Descargando música...', 'loading');
+  if (!url) return showStatus('music-upload-status', 'Ingresa una URL', 'error');
+  showStatus('music-upload-status', '<span class="spinner"></span>Descargando...', 'loading');
   const res = await fetch('/upload-music-url', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
   const data = await res.json();
-  if (data.error) return showStatus('music-url-status', '❌ ' + data.error, 'error');
-  tempMusicFile = data.file;
-  // Agregar al selector
+  if (data.error) return showStatus('music-upload-status', '❌ ' + data.error, 'error');
+  addTempOption(data.file, url.split('/').pop());
+  showStatus('music-upload-status', '✅ Música cargada. <span class="temp-badge">⏱️ temporal</span>', 'success');
+}
+
+function addTempOption(file, label) {
   const sel = document.getElementById('music-select');
-  // Quitar opcion temp anterior si existe
   [...sel.options].forEach(o => { if (o.dataset.temp) o.remove(); });
   const opt = document.createElement('option');
-  opt.value = data.file;
-  opt.textContent = '🎵⏱️ ' + data.file + ' (temporal)';
-  opt.dataset.temp = '1';
-  opt.selected = true;
+  opt.value = file; opt.textContent = '🎵⏱️ ' + label + ' (temporal)';
+  opt.dataset.temp = '1'; opt.selected = true;
   sel.appendChild(opt);
-  showStatus('music-url-status', '✅ Música cargada. Se borrará después de generar. <span class="temp-badge">⏱️ temporal</span>', 'success');
 }
 
 async function generateFlashback() {
@@ -215,13 +243,11 @@ async function generateFlashback() {
   const res = await fetch('/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({texto, voice, music_file, music_volume, delete_music_after})});
   const data = await res.json();
   if (data.error) return showStatus('gen-status', '❌ ' + data.error, 'error');
-  currentFile = data.file;
-  currentFilename = data.filename;
-  // Limpiar opcion temporal del selector si se uso
+  currentFile = data.file; currentFilename = data.filename;
   if (delete_music_after) {
     [...document.getElementById('music-select').options].forEach(o => { if (o.dataset.temp) o.remove(); });
-    tempMusicFile = null;
     document.getElementById('music-url-input').value = '';
+    document.getElementById('music-file-input').value = '';
   }
   showStatus('gen-status', '✅ Flashback generado correctamente', 'success');
   const player = document.getElementById('audio-player');
@@ -232,16 +258,10 @@ async function generateFlashback() {
 
 function downloadAudio() {
   if (!currentFile) return;
-  const a = document.createElement('a');
-  a.href = '/download/' + currentFile + '?filename=' + currentFilename;
-  a.download = currentFilename;
-  a.click();
+  const a = document.createElement('a'); a.href = '/download/' + currentFile + '?filename=' + currentFilename;
+  a.download = currentFilename; a.click();
 }
-
-function clearText() {
-  document.getElementById('texto-flashback').value = '';
-  document.getElementById('char-count').textContent = '0 chars';
-}
+function clearText() { document.getElementById('texto-flashback').value = ''; document.getElementById('char-count').textContent = '0 chars'; }
 function addIntro() {
   const ta = document.getElementById('texto-flashback');
   ta.value = 'Aquí, Estación Kusmedios. En nuestro flashback informativo de las ' + new Date().getHours() + ' horas, las noticias más importantes.\n\n' + ta.value;
@@ -252,18 +272,13 @@ function addOutro() {
   ta.value += '\n\nEso es todo en el flashback informativo de Estación Kusmedios. Seguimos con más música.';
   ta.dispatchEvent(new Event('input'));
 }
-function showStatus(id, msg, type) {
-  const el = document.getElementById(id);
-  el.innerHTML = msg; el.className = 'status ' + type;
-}
+function showStatus(id, msg, type) { const el = document.getElementById(id); el.innerHTML = msg; el.className = 'status ' + type; }
 async function loadMusicList() {
-  const res = await fetch('/music-list');
-  const data = await res.json();
+  const res = await fetch('/music-list'); const data = await res.json();
   const sel = document.getElementById('music-select');
   data.files.forEach(f => {
-    if (f.startsWith('temp_music_')) return; // no mostrar temporales al cargar
-    const opt = document.createElement('option');
-    opt.value = f; opt.textContent = '🎵 ' + f;
+    if (f.startsWith('temp_music_')) return;
+    const opt = document.createElement('option'); opt.value = f; opt.textContent = '🎵 ' + f;
     sel.appendChild(opt);
   });
 }

@@ -7,12 +7,14 @@ import requests as req
 from gtts import gTTS
 from pydub import AudioSegment
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 OUTPUT_DIR = "outputs"
+MUSIC_DIR = "static/music"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs("static/music", exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
 
 VOICES = {
     "es-mx": "🇲🇽 Español México",
@@ -44,9 +46,22 @@ def fetch_rss():
             noticias.append({'error': str(e), 'url': url})
     return jsonify({'noticias': noticias})
 
+@app.route('/upload-music-file', methods=['POST'])
+def upload_music_file():
+    """Sube un archivo MP3 desde el dispositivo del usuario"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No se recibio archivo'}), 400
+    f = request.files['file']
+    if not f.filename.lower().endswith('.mp3'):
+        return jsonify({'error': 'Solo se aceptan archivos .mp3'}), 400
+    uid = str(uuid.uuid4())[:8]
+    filename = f"temp_music_{uid}.mp3"
+    filepath = os.path.join(MUSIC_DIR, filename)
+    f.save(filepath)
+    return jsonify({'success': True, 'file': filename})
+
 @app.route('/upload-music-url', methods=['POST'])
 def upload_music_url():
-    """Descarga musica desde URL, la guarda temporalmente para UNA generacion"""
     data = request.json
     url = data.get('url', '').strip()
     if not url:
@@ -55,30 +70,15 @@ def upload_music_url():
         r = req.get(url, timeout=20, stream=True, headers={'User-Agent': 'Mozilla/5.0'})
         if r.status_code != 200:
             return jsonify({'error': f'No se pudo descargar: HTTP {r.status_code}'}), 400
-        content_type = r.headers.get('content-type', '')
-        if 'audio' not in content_type and not url.lower().endswith('.mp3'):
-            return jsonify({'error': 'La URL no parece ser un archivo de audio MP3'}), 400
         uid = str(uuid.uuid4())[:8]
         filename = f"temp_music_{uid}.mp3"
-        filepath = os.path.join("static/music", filename)
+        filepath = os.path.join(MUSIC_DIR, filename)
         with open(filepath, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
-        return jsonify({'success': True, 'file': filename, 'message': 'Musica cargada (uso temporal)'})
+        return jsonify({'success': True, 'file': filename})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/delete-temp-music', methods=['POST'])
-def delete_temp_music():
-    """Borra archivo de musica temporal despues de usarlo"""
-    data = request.json
-    filename = os.path.basename(data.get('file', ''))
-    if filename.startswith('temp_music_'):
-        path = os.path.join("static/music", filename)
-        if os.path.exists(path):
-            os.remove(path)
-            return jsonify({'success': True})
-    return jsonify({'success': False})
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -102,13 +102,9 @@ def generate():
     except Exception as e:
         return jsonify({'error': f'Error TTS: {str(e)}'}), 500
 
-    if not os.path.exists(voice_path):
-        return jsonify({'error': 'No se genero el archivo de voz'}), 500
-
-    music_dir = "static/music"
     selected_music = None
     if music_file:
-        candidate = os.path.join(music_dir, os.path.basename(music_file))
+        candidate = os.path.join(MUSIC_DIR, os.path.basename(music_file))
         if os.path.exists(candidate):
             selected_music = candidate
 
@@ -124,7 +120,6 @@ def generate():
             mezcla = musica.overlay(voz)
             mezcla.export(final_path, format="mp3", bitrate="192k")
             os.remove(voice_path)
-            # Borrar musica temporal despues de mezclar
             if delete_after and os.path.basename(music_file).startswith('temp_music_'):
                 os.remove(selected_music)
         except Exception as e:
@@ -146,8 +141,7 @@ def download(file_id):
 
 @app.route('/music-list')
 def music_list():
-    music_dir = "static/music"
-    files = [f for f in os.listdir(music_dir) if f.endswith('.mp3')]
+    files = [f for f in os.listdir(MUSIC_DIR) if f.endswith('.mp3')]
     return jsonify({'files': files})
 
 @app.route('/health')
