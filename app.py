@@ -3,6 +3,7 @@ import feedparser
 import os
 import uuid
 import re
+import requests as req
 from gtts import gTTS
 from pydub import AudioSegment
 from datetime import datetime
@@ -38,14 +39,46 @@ def fetch_rss():
                 summary = entry.get('summary', entry.get('description', ''))
                 summary = re.sub('<[^<]+?>', '', summary)
                 summary = summary[:300].strip()
-                noticias.append({
-                    'fuente': feed_title,
-                    'titulo': title,
-                    'resumen': summary
-                })
+                noticias.append({'fuente': feed_title, 'titulo': title, 'resumen': summary})
         except Exception as e:
             noticias.append({'error': str(e), 'url': url})
     return jsonify({'noticias': noticias})
+
+@app.route('/upload-music-url', methods=['POST'])
+def upload_music_url():
+    """Descarga musica desde URL, la guarda temporalmente para UNA generacion"""
+    data = request.json
+    url = data.get('url', '').strip()
+    if not url:
+        return jsonify({'error': 'URL vacia'}), 400
+    try:
+        r = req.get(url, timeout=20, stream=True, headers={'User-Agent': 'Mozilla/5.0'})
+        if r.status_code != 200:
+            return jsonify({'error': f'No se pudo descargar: HTTP {r.status_code}'}), 400
+        content_type = r.headers.get('content-type', '')
+        if 'audio' not in content_type and not url.lower().endswith('.mp3'):
+            return jsonify({'error': 'La URL no parece ser un archivo de audio MP3'}), 400
+        uid = str(uuid.uuid4())[:8]
+        filename = f"temp_music_{uid}.mp3"
+        filepath = os.path.join("static/music", filename)
+        with open(filepath, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return jsonify({'success': True, 'file': filename, 'message': 'Musica cargada (uso temporal)'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete-temp-music', methods=['POST'])
+def delete_temp_music():
+    """Borra archivo de musica temporal despues de usarlo"""
+    data = request.json
+    filename = os.path.basename(data.get('file', ''))
+    if filename.startswith('temp_music_'):
+        path = os.path.join("static/music", filename)
+        if os.path.exists(path):
+            os.remove(path)
+            return jsonify({'success': True})
+    return jsonify({'success': False})
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -54,6 +87,7 @@ def generate():
     voice = data.get('voice', 'es-mx')
     music_file = data.get('music_file', '')
     music_volume = int(data.get('music_volume', -18))
+    delete_after = data.get('delete_music_after', False)
 
     if not texto:
         return jsonify({'error': 'Texto vacio'}), 400
@@ -62,7 +96,6 @@ def generate():
     voice_path = os.path.join(OUTPUT_DIR, f"voz_{uid}.mp3")
     final_path = os.path.join(OUTPUT_DIR, f"flashback_{uid}.mp3")
 
-    # Google TTS - funciona en cualquier servidor
     try:
         tts = gTTS(text=texto, lang=voice, slow=False)
         tts.save(voice_path)
@@ -72,15 +105,14 @@ def generate():
     if not os.path.exists(voice_path):
         return jsonify({'error': 'No se genero el archivo de voz'}), 500
 
-    # Mezclar con musica si hay
     music_dir = "static/music"
-    music_files = [f for f in os.listdir(music_dir) if f.endswith('.mp3')]
-
     selected_music = None
-    if music_file and music_file in music_files:
-        selected_music = os.path.join(music_dir, music_file)
+    if music_file:
+        candidate = os.path.join(music_dir, os.path.basename(music_file))
+        if os.path.exists(candidate):
+            selected_music = candidate
 
-    if selected_music and os.path.exists(selected_music):
+    if selected_music:
         try:
             voz = AudioSegment.from_mp3(voice_path)
             musica = AudioSegment.from_mp3(selected_music)
@@ -92,6 +124,9 @@ def generate():
             mezcla = musica.overlay(voz)
             mezcla.export(final_path, format="mp3", bitrate="192k")
             os.remove(voice_path)
+            # Borrar musica temporal despues de mezclar
+            if delete_after and os.path.basename(music_file).startswith('temp_music_'):
+                os.remove(selected_music)
         except Exception as e:
             os.rename(voice_path, final_path)
     else:
